@@ -4,15 +4,14 @@
 #tutorial from http://www.dototot.com/how-to-write-a-twitter-bot-with-python-and-tweepy/
 
 import tweepy, time, sys, Queue, pprint, argparse, copy
-from linguistics import hard_string_similarity, make_rhyme, make_same_syl_count, normalize_word
+from linguistics import hard_string_similarity, make_rhyme, make_same_syl_count, normalize_word, remove_punctuation
+# from pprint import pprint
 
 class Request:
     ''' class to store the parameters for the poem, and actually construct the poem '''
     def __init__(self, status_object, api):
         self.BAD_QUERY = False
         try:
-            print 'here! here!'
-            print status_object.text
             parser = argparse.ArgumentParser()
             parser.add_argument('-query', type=str, help='what do you want to search', required=True)
             args = parser.parse_args(split_ignore_quotes(status_object.text)[1:])
@@ -24,7 +23,7 @@ class Request:
             print 'searching english tweets...'
             self.searches = {}
             for result in api.search(self.query, lang='en'):
-                self.searches[str(result.id)] = result.text.split()
+                self.searches[str(result.id)] = remove_punctuation(result.text).split()
 
             print '...searched'
             print 'removing tweets that are too long...'
@@ -41,7 +40,7 @@ class Request:
         for tweet in self.searches:
             no_ats = []
             for word in self.searches[tweet]:
-                if 'http://':
+                if not 'http' in word:
                     no_ats += [word]
             self.searches[tweet] = no_ats
             if len(' '.join(self.searches[tweet])) > 70:
@@ -64,6 +63,9 @@ class Request:
             scores[i] = (pairs[i], hard_string_similarity(pairs[i][0], pairs[i][1]))
         scores.sort(key = lambda x: x[1], reverse = True)
 
+        print self.searches
+        print scores
+
         for i in range(len(scores)):
             tweet1 = scores[i][0][0]
             tweet2 = scores[i][0][1]
@@ -76,13 +78,15 @@ class Request:
 
             for i in range(len(tweet1)):
                 normalized = normalize_word(tweet1[i])
-                normalization_dict[tweet1[i]] = normalized
                 tweet1[i] = normalized
+                if i != len(tweet1) - 1:
+                    normalization_dict[tweet1[i]] = normalized
 
             for i in range(len(tweet2)):
                 normalized = normalize_word(tweet2[i])
-                normalization_dict[tweet2[i]] = normalized
                 tweet2[i] = normalized
+                if i != len(tweet1) - 1:
+                    normalization_dict[tweet2[i]] = normalized
 
             reverse_normalization = dict((v,k) for k, v in normalization_dict.iteritems())
 
@@ -94,7 +98,8 @@ class Request:
             print '\ttweet1: ' + ' '.join(tweet1)
             print '\ttweet2: ' + ' '.join(tweet2)
 
-            try:
+            # try:
+            if True:
                 print 'before rhyming changes:'
                 print '\ttweet1: ' + ' '.join(tweet1)
                 print '\ttweet2: ' + ' '.join(tweet2)
@@ -124,9 +129,9 @@ class Request:
 
                 return '@' + self.sender + '\n' + ' '.join(tweet1) + '\n' + ' '.join(tweet2)
 
-            except Exception, e:
-                print 'exception:', str(e)
-                print 'moving to next pair of tweets'
+            # except Exception, e:
+            #     print 'exception:', str(e)
+            #     print 'moving to next pair of tweets'
 
     # String representation of the instance variables relevant to the query
     def __repr__(self):
@@ -142,9 +147,9 @@ def split_ignore_quotes(text):
     
 def main():
     CONSUMER_KEY = 'p9OxRifkkzauMPUuh9CogQDu3'
-    CONSUMER_SECRET = 'REDACTED'
+    CONSUMER_SECRET = 'dAdelKEiBcWuKQbKV0JSIDp1iN9Ueb8XIHP9v5DTm94HSQno9o'
     ACCESS_TOKEN = '2826481127-MxZGiWMGBoWhkC9acHFKPBbbm4aFMczaeWM6ctU'
-    ACCESS_SECRET = 'REDACTED'
+    ACCESS_SECRET = 'eWFxLyyKmIziQJSZEyvwrq9wZ2n7RJK31S6K3ehibxDKQ'
     auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
     auth.set_access_token(ACCESS_TOKEN, ACCESS_SECRET)
     api = tweepy.API(auth) 

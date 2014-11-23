@@ -8,6 +8,7 @@ import nltk
 from nltk.corpus import cmudict, wordnet
 import gensim
 from other import int2word
+from nltk.metrics import edit_distance
 
 # NOTE - WE MUST CHOOSE TO EITHER RESTRICT THE SYLLABLE MANIPULATOR TO NOT CHANGING THE LAST WORD, OR THE RHYME MANIPULATOR
 # TO NOT CHANGING THE NUMBER OF SYLLABLES
@@ -56,7 +57,7 @@ def make_rhyme(tweet1, tweet2):
         print 'rhyming failed'
         return None # error will be handled in calling function
     # If changing the first is better, do it.
-    if change_first[1] < change_second[1]:
+    if change_first[1] > change_second[1]:
         tweet1[-1] = change_first[0]
     else:
         tweet2[-1] = change_second[0]
@@ -126,12 +127,12 @@ class Syllable_Manipulator:
             if self.easy_increases[word][1] > best_score:
                 best_increase = word
                 best_score = self.easy_increases[word][1]
-        if self.easy_increases[best_increase][0] != None:
+        if best_increase != None and self.easy_increases[best_increase][0] != None:
             # print '113, sub:', best_increase, 'for', self.easy_increases[best_increase][0]
             self.sent[self.sent.index(best_increase)] = self.easy_increases[best_increase][0]
             self.final_score += 1 - self.easy_increases[best_increase][1]
         else:
-            self.sent = self.sent[1:]
+            self.final_score = float('inf')
 
     def subtract_syllable(self):
         ''' consider replacing each word with a word that is one less syllable, perform the least 
@@ -147,11 +148,12 @@ class Syllable_Manipulator:
             if self.easy_reductions[word][1] > best_score:
                 best_reduction = word
                 best_score = self.easy_reductions[word][1]
-        if self.easy_reductions[best_reduction][0] != None:
+        if best_reduction != None and self.easy_reductions[best_reduction][0] != None:
             # print '129, sub:', best_reduction, 'for', self.easy_reductions[best_reduction][0]
             self.sent[self.sent.index(best_reduction)] = self.easy_reductions[best_reduction][0]
             self.final_score += 1 - self.easy_reductions[best_reduction][1]
         else:
+            self.final_score = 10000
             self.sent = self.sent[1:]
 
     def syllable_count_of_word(self, word):
@@ -197,28 +199,24 @@ def make_same_syl_count(tweet1, tweet2):
     sm2 = Syllable_Manipulator()
     sm2.reset(tweet2, nsyl_sent(tweet1))
     while sm1.total_syllable_count() != sm2.total_syllable_count():
+        # print sm1.sent
+        # print sm2.sent
         prev_s1 = sm1.sent
         prev_s2 = sm2.sent
         sm1.progress()
         sm2.progress()
+        # print sm1.final_score, sm2.final_score
         if sm1.final_score < sm2.final_score:
             sm1.reset(sm1.sent, nsyl_sent(prev_s2))
             sm2.reset(prev_s2, sm1.current)
         else:
             sm1.reset(prev_s1, sm2.current)
             sm2.reset(sm2.sent, nsyl_sent(prev_s1))
+        # print sm1.total_syllable_count()
+        # print sm2.total_syllable_count()
     return sm1.sent, sm2.sent
 
 # ------------------------------------------------ TWEET NORMALIZATION -----------------------------------------------------
-def load_dictionary():
-    ''' This dictionary was found at https://sites.google.com/a/student.unimelb.edu.au/hanb/research '''
-    fl = open('../corpus preparation/emnlp/emnlp_dict.txt')
-    result = {}
-    for line in fl:
-        split_line = line.split()
-        result[split_line[0]] = split_line[1]
-    return result
-
 def normalize_word(word):
     ''' if it's a hashtag, get rid of the hashtag and normalize it
         if it's a number, use a function found online to write out the number for phonetic ease
@@ -226,9 +224,6 @@ def normalize_word(word):
         if it's in the twitter corpus, find a "normal" word that is contextually similar to it
         if it's not in any of the above, spell correct it
         if it can't be spell corrected, return it un-normalized '''
-    for punc in ',!#@?.':
-        word = word.replace(punc, '')
-
     if word.isdigit():
         return int2word(int(word))
     word = word.lower()
@@ -236,10 +231,13 @@ def normalize_word(word):
         # print 'in phone dict'
         return word
     try:
+        normalized_alternatives = []
         for option in TWITTER_MODEL.most_similar(word):
             if option[0] in PHONE_DICT:
-                # print 'twitter model used'
-                return option[0]
+                normalized_alternatives.add(option[0])
+        ranked_alts = sorted([(alt, edit_distance(word,alt)) for alt in normalized_alternatives], key=lambda x:x[1])
+        # print 'twitter model used'
+        return ranked_alts[0][0]
     except:
         pass
     try:
@@ -297,6 +295,15 @@ def get_phonemes(word):
                 result.append(word[i].upper())
         return result
 
+# ------------------------------------------------- OTHER ------------------------------------------------------------
+def remove_punctuation(string):
+    # print 'i got ' + string
+    s = string
+    for punc in ''',":-/!#@';?.''':
+        s = s.replace(punc, '')
+    # print 'i return ' + s
+    return s
+
 # -------------------------------------------------- LEXICAL GLOBALS --------------------------------------------------
 # Just use this gensim model made with word2vec for context vector similarity of words!!!
 print 'loading twitter word corpus ...'
@@ -305,9 +312,6 @@ print '...loaded'
 print 'loading english dictionary...'
 ENGLISH_DICT = enchant.Dict('en_US')
 print '...loaded'
-# print 'loading twitter normalization dictionary...'
-# TWITTER_DICT = load_dictionary()
-# print '...loaded'
 print 'loading phonology dictionary...'
 PHONE_DICT = cmudict.dict()
 print '...loaded'
