@@ -11,12 +11,12 @@ class Request:
     ''' class to store the parameters for the poem, and actually construct the poem '''
     def __init__(self, status_object, api):
         self.BAD_QUERY = False
+        self.sender = status_object.author.screen_name
         try:
             parser = argparse.ArgumentParser()
             parser.add_argument('-query', type=str, help='what do you want to search', required=True)
             args = parser.parse_args(split_ignore_quotes(status_object.text)[1:])
 
-            self.sender = status_object.author.screen_name
             self.query = args.query
 
             # Download the tweets
@@ -26,31 +26,28 @@ class Request:
                 self.searches[str(result.id)] = remove_punctuation(result.text).split()
 
             print '...searched'
-            print 'removing tweets that are too long...'
+            print 'trimming tweets that are too long...'
             self.cut()
-            print '...removed'
+            print '...trimmed'
 
         except:
             self.BAD_QUERY = True
 
     def cut(self):
-        ''' Removes all @xxxx from tweets, and then removes all tweets over 70 characters 
+        ''' Removes all @xxxx from tweets, and then trims tweets until they are under 70 characters
             keeps hashtags '''
-        to_delete = set()
         for tweet in self.searches:
             no_ats = []
             for word in self.searches[tweet]:
                 if not 'http' in word:
                     no_ats += [word]
             self.searches[tweet] = no_ats
-            if len(' '.join(self.searches[tweet])) > 70:
-                to_delete.add(tweet)
-        for tweet in to_delete:
-            del self.searches[tweet]
+            while len(' '.join(self.searches[tweet])) > 65:
+                self.searches[tweet] = self.searches[tweet][1:]
 
     def get_poem(self):
         if self.BAD_QUERY:
-            return '''BAD QUERY - request must be in the format: \n (AT)PomeSic -query "query", where "query" must be in quotes'''
+            return '@' + self.sender + '''BAD QUERY - request must be in the format: \n (AT)PomeSic -query "query", where "query" must be in quotes'''
 
         pairs = []
         for one in self.searches:
@@ -63,12 +60,16 @@ class Request:
             scores[i] = (pairs[i], hard_string_similarity(pairs[i][0], pairs[i][1]))
         scores.sort(key = lambda x: x[1], reverse = True)
 
-        print self.searches
-        print scores
+        inverse_searches = dict((' '.join(v),k) for k, v in self.searches.iteritems())
+        # print self.searches
+        # print scores
 
         for i in range(len(scores)):
             tweet1 = scores[i][0][0]
             tweet2 = scores[i][0][1]
+
+            tweet1_id = inverse_searches[' '.join(tweet1)]
+            tweet2_id = inverse_searches[' '.join(tweet2)]
 
             print 'trying to compose a poem from:'
             print '\ttweet1: ' + ' '.join(tweet1)
@@ -98,8 +99,8 @@ class Request:
             print '\ttweet1: ' + ' '.join(tweet1)
             print '\ttweet2: ' + ' '.join(tweet2)
 
-            # try:
-            if True:
+            try:
+            # if True:
                 print 'before rhyming changes:'
                 print '\ttweet1: ' + ' '.join(tweet1)
                 print '\ttweet2: ' + ' '.join(tweet2)
@@ -129,9 +130,9 @@ class Request:
 
                 return '@' + self.sender + '\n' + ' '.join(tweet1) + '\n' + ' '.join(tweet2)
 
-            # except Exception, e:
-            #     print 'exception:', str(e)
-            #     print 'moving to next pair of tweets'
+            except Exception, e:
+                print 'exception:', str(e)
+                print 'moving to next pair of tweets'
 
     # String representation of the instance variables relevant to the query
     def __repr__(self):
@@ -146,10 +147,10 @@ def split_ignore_quotes(text):
     return result
     
 def main():
-    CONSUMER_KEY = 'p9OxRifkkzauMPUuh9CogQDu3'
-    CONSUMER_SECRET = 'dAdelKEiBcWuKQbKV0JSIDp1iN9Ueb8XIHP9v5DTm94HSQno9o'
-    ACCESS_TOKEN = '2826481127-MxZGiWMGBoWhkC9acHFKPBbbm4aFMczaeWM6ctU'
-    ACCESS_SECRET = 'eWFxLyyKmIziQJSZEyvwrq9wZ2n7RJK31S6K3ehibxDKQ'
+    CONSUMER_KEY = 'REDACTED'
+    CONSUMER_SECRET = 'REDACTED'
+    ACCESS_TOKEN = 'REDACTED'
+    ACCESS_SECRET = 'REDACTED'
     auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
     auth.set_access_token(ACCESS_TOKEN, ACCESS_SECRET)
     api = tweepy.API(auth) 
@@ -167,7 +168,7 @@ def main():
     done = set()      # tweets that have been processed, must be added to seen_file
 
     print 'checking for queries...'
-    mentions = api.mentions_timeline(count=1) # get tweets to process
+    mentions = api.mentions_timeline(count=15) # get tweets to process
     # If we haven't processed / responded to them yet, add it to the queue
     for mention in mentions:
         if not str(mention.id) in processed_tweets and mention != None:

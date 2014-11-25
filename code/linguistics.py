@@ -10,8 +10,6 @@ import gensim
 from other import int2word
 from nltk.metrics import edit_distance
 
-# NOTE - WE MUST CHOOSE TO EITHER RESTRICT THE SYLLABLE MANIPULATOR TO NOT CHANGING THE LAST WORD, OR THE RHYME MANIPULATOR
-# TO NOT CHANGING THE NUMBER OF SYLLABLES
 # ------------------------------------------------- RHYME MANIPULATION -----------------------------------------------------
 ''' CONSIDER CHANGING HOW RHYMING WORKS, SO THAT YOU GET THE MOST SIMILAR WORDS TO BOTH, AND NAVIGATE DOWN IN THE SIMILAIRTY
     PATH UNTIL YOU HAVE A WORD THAT RHYMES '''
@@ -21,6 +19,18 @@ def is_rhyming_pair(phon1, phon2):
     while not phon1[-vowel_idx][-1].isdigit():
         vowel_idx += 1
     return phon1[-vowel_idx:] == phon2[-vowel_idx:]
+
+def change_both(word1, word2):
+    syns_1 = get_synonyms(word1)
+    syns_2 = get_synonyms(word2)
+    rhyming_pairs = []
+    for syn_1 in syns_1:
+        for syn_2 in syns_2:
+            if is_rhyming_pair(get_phonemes(syn_1), get_phonemes(syn_2)):
+                rhyming_pairs.append((syn_1, syn_2))
+    rhyming_pairs = [(pair, (TWITTER_MODEL.similarity(pair[0], word1) + TWITTER_MODEL.similarity(pair[1], word2)) / 2.0) for pair in rhyming_pairs]
+    rhyming_pairs.sort(key=lambda x: x[1], reverse = True)
+    return rhyming_pairs[0]
 
 def get_rhymes(word):
     ''' Returns a list of words in the twitter corpus rhyming with word "word"
@@ -42,25 +52,33 @@ def best_rhyme(start, goal):
     return result[0]
 
 def make_rhyme(tweet1, tweet2):
-    ''' Tries to make tweet1 rhyme with tweet2, then tweet2 with tweet1, choses the least 'costly' option
-    fails if it is impossible to rhyme with both tweet1 and tweet2 '''
+    ''' Tries to make tweet1 rhyme with tweet2, then tweet2 with tweet1, then both, choses the least 'costly' option
+    fails if it is impossible '''
     try: # evaluate the cost of making tweet1 rhyme with tweet2
-        change_second = best_rhyme(tweet1[-1], tweet2[-1]) 
+        chng_second = best_rhyme(tweet1[-1], tweet2[-1]) 
     except: # will fail if there is no rhyming word
-        change_second = (None, float('inf'))
+        chng_second = (None, 0)
     try: # evaluate the cost of making tweet2 rhyme with tweet1
-        change_first = best_rhyme(tweet2[-1], tweet1[-1])
+        chng_first = best_rhyme(tweet2[-1], tweet1[-1])
     except: # if there is no rhyming word, make the cost very high
-        change_first = (None, float('inf'))
-    # If neither final word is able to be rhymed with
-    if change_first[0] == None and change_second[0] == None:
-        print 'rhyming failed'
-        return None # error will be handled in calling function
+        chng_first = (None, 0)
+    try :
+        chng_both = change_both(tweet1[-1], tweet2[-1])
+    except:
+        chng_both = (None, 0)
     # If changing the first is better, do it.
-    if change_first[1] > change_second[1]:
-        tweet1[-1] = change_first[0]
+    if chng_first[1] > chng_second[1]:
+        if chng_both[1] > chng_first[1]:
+            tweet1[-1] = chng_both[0][0]
+            tweet2[-1] = chng_both[0][1]
+        else:
+            tweet1[-1] = chng_first[0]
     else:
-        tweet2[-1] = change_second[0]
+        if chng_both[1] > chng_second[1]:
+            tweet1[-1] = chng_both[0][0]
+            tweet2[-1] = chng_both[0][1]
+        else:
+            tweet2[-1] = chng_second[0]
     return (tweet1, tweet2)
 
 # ----------------------------------------------- SYLLABLE MANIPULATION ----------------------------------------------------
@@ -72,8 +90,7 @@ def synonym_with_syllables(word, n_syl):
     if n_syl == 0:
         return (None, 0)
     # print '62,',word
-    options = wordnet.synsets(word)
-    options = [opt.name.split('.')[0] for opt in options if opt.name.split('.')[0].isalpha()]
+    options = get_synonyms(word)
     works = filter(lambda x: nsyl_word(x) == n_syl, options)
     result = [(opt, word_similarity(word, opt)) for opt in works]
     result.sort(reverse=True, key = lambda x: x[1])
@@ -295,14 +312,28 @@ def get_phonemes(word):
                 result.append(word[i].upper())
         return result
 
+# ------------------------------------------------- GET SYNONYMS -----------------------------------------------------
+def get_synonyms(word):
+    synonyms = set()
+    for synset in wordnet.synsets(word):
+        for superset in synset.hypernyms():
+            for lem in superset.lemma_names:
+                if not '_' in lem:
+                    synonyms.add(lem)
+            for subset in superset.hyponyms():
+                for lem in subset.lemma_names:
+                    if not '_' in lem:
+                        synonyms.add(lem)
+    return synonyms
+
 # ------------------------------------------------- OTHER ------------------------------------------------------------
 def remove_punctuation(string):
     # print 'i got ' + string
     s = string
-    for punc in ''',":-/!#@';?.''':
+    for punc in ''',":-/!#|\~`<>][}{$%^&*()-_=+@';?.''':
         s = s.replace(punc, '')
     # print 'i return ' + s
-    return s
+    return s.encode('ascii','ignore')
 
 # -------------------------------------------------- LEXICAL GLOBALS --------------------------------------------------
 # Just use this gensim model made with word2vec for context vector similarity of words!!!
